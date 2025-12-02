@@ -1,11 +1,12 @@
+
 import React from 'react';
 import { useStore } from '../../context/StoreContext';
-import { Users, UserX, Activity, ShieldAlert } from 'lucide-react';
+import { Users, UserX, Activity, ShieldAlert, Database, Server, Wifi, Cpu } from 'lucide-react';
 import { UserStatus } from '../../types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 export const AdminDashboard: React.FC = () => {
-  const { users } = useStore();
+  const { users, isDbConnected } = useStore();
 
   const totalUsers = users.length;
   const activeUsers = users.filter(u => u.status === UserStatus.ACTIVE).length;
@@ -25,8 +26,35 @@ export const AdminDashboard: React.FC = () => {
     { name: 'Suspended', count: suspendedUsers },
   ];
 
+  // Simulated System Health Metrics
+  const systemMetrics = [
+      { label: 'SQL Database', status: isDbConnected ? 'Connected' : 'Connecting...', icon: Database, color: isDbConnected ? 'text-emerald-600' : 'text-orange-500', bg: isDbConnected ? 'bg-emerald-100' : 'bg-orange-100' },
+      { label: 'Server Status', status: 'Online (Windows Local)', icon: Server, color: 'text-blue-600', bg: 'bg-blue-100' },
+      { label: 'Network Latency', status: '24ms (Firebase Relay)', icon: Wifi, color: 'text-purple-600', bg: 'bg-purple-100' },
+      { label: 'CPU Load', status: '12% (Optimal)', icon: Cpu, color: 'text-indigo-600', bg: 'bg-indigo-100' }
+  ];
+
   return (
     <div className="space-y-6">
+      
+      {/* System Health Panel */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+          <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wider mb-4">System Infrastructure Health</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {systemMetrics.map((metric, idx) => (
+                  <div key={idx} className="flex items-center p-3 rounded-lg border border-gray-100 bg-gray-50">
+                      <div className={`p-2 rounded-lg ${metric.bg} mr-3`}>
+                          <metric.icon className={`w-5 h-5 ${metric.color}`} />
+                      </div>
+                      <div>
+                          <p className="text-xs text-gray-400 font-medium">{metric.label}</p>
+                          <p className={`text-sm font-bold ${metric.color}`}>{metric.status}</p>
+                      </div>
+                  </div>
+              ))}
+          </div>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {stats.map((stat, index) => (
           <div key={index} className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 flex items-center">

@@ -31,15 +31,19 @@ export interface User {
   id: string;
   name: string;
   email: string;
+  password?: string; // Added for auth
   role: UserRole;
   status: UserStatus;
   avatar: string;
   lastActive: string;
   logs: Log[];
   notifications: Notification[];
-  permissions: string[]; // e.g., 'edit_profile', 'view_reports'
-  dataMeqLimit: number; // Maximum lines allowed
-  dataMeqUsage: number; // Lines generated so far
+  permissions: string[]; 
+  dataMeqLimit: number; 
+  dataMeqUsage: number; 
+  data1Usage: number; // New: Specific usage for Data 1
+  data2Usage: number; // New: Specific usage for Data 2
+  maxPickPerRequest: number; 
 }
 
 export interface ChatMessage {
@@ -66,6 +70,7 @@ export interface DataMeqLog {
 export interface SystemSettings {
   dataMeqLocked: boolean;
   maintenanceMode: boolean;
+  allowUserUploads: boolean;
 }
 
 export interface StoreState {
@@ -79,9 +84,9 @@ export interface StoreState {
   data2: string[];
   dataMeqLogs: DataMeqLog[];
   
-  login: (email: string) => void;
+  login: (email: string, password?: string) => Promise<boolean>;
   logout: () => void;
-  addUser: (user: Omit<User, 'id' | 'logs' | 'notifications' | 'lastActive' | 'dataMeqLimit' | 'dataMeqUsage'>) => void;
+  addUser: (user: Omit<User, 'id' | 'logs' | 'notifications' | 'lastActive' | 'dataMeqLimit' | 'dataMeqUsage' | 'maxPickPerRequest' | 'data1Usage' | 'data2Usage'>) => void;
   updateUserStatus: (id: string, status: UserStatus) => void;
   sendNotification: (userId: string, notification: Omit<Notification, 'id' | 'read' | 'timestamp'>) => void;
   sendMessage: (text: string) => void;
@@ -96,6 +101,6 @@ export interface StoreState {
   addDataMeq: (type: 'data1' | 'data2', content: string) => void;
   clearDataMeq: (type: 'data1' | 'data2') => void;
   generateEmails: (count1: number, count2: number, inserts: {pos: number, text: string}[]) => string;
-  updateUserLimit: (userId: string, limit: number) => void;
+  updateUserLimit: (userId: string, limit: number, maxPerRequest: number) => void;
   resetUserUsage: (userId: string) => void;
 }

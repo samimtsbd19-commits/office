@@ -1,6 +1,7 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { useStore } from '../../context/StoreContext';
-import { Bell, Shield, User, Send, Bot, Users } from 'lucide-react';
+import { Bell, User, Send, Bot, Users, Activity } from 'lucide-react';
 import { getAIChatResponse } from '../../services/geminiService';
 import { UserRole } from '../../types';
 
@@ -25,9 +26,7 @@ export const UserDashboard: React.FC = () => {
     sendMessage(userText); 
     setChatInput('');
 
-    // If chat is empty or specifically asked, simulate AI response
-    // For now, let's say if the user mentions "@ai", we trigger it.
-    // Or just randomly for engagement in this demo if it's the only message.
+    // Trigger AI response if specifically asked or for first engagement
     if (userText.toLowerCase().includes('@ai') || messages.length < 2) {
         setIsTyping(true);
         const history = messages.slice(-5).map(m => `${m.senderName}: ${m.text}`).join('\n');
@@ -59,7 +58,7 @@ export const UserDashboard: React.FC = () => {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[calc(100vh-8rem)]">
       {/* Notifications & Profile Panel */}
-      <div className="lg:col-span-1 space-y-6 overflow-y-auto">
+      <div className="lg:col-span-1 space-y-6 overflow-y-auto custom-scrollbar">
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <div className="flex items-center justify-between mb-4">
              <h3 className="text-lg font-bold flex items-center text-gray-800">
@@ -102,7 +101,8 @@ export const UserDashboard: React.FC = () => {
                    <p className="text-sm text-gray-500">{currentUser.email}</p>
                </div>
            </div>
-           <div className="space-y-3">
+           
+           <div className="space-y-3 mb-6">
               <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
                  <span className="text-sm text-gray-600">Account Status</span>
                  <span className={`px-2 py-1 rounded text-xs font-bold uppercase ${
@@ -113,6 +113,27 @@ export const UserDashboard: React.FC = () => {
                  <span className="text-sm text-gray-600">Role</span>
                  <span className="text-sm font-medium text-gray-800 uppercase">{currentUser.role}</span>
               </div>
+           </div>
+
+           <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Data Consumption</h4>
+           <div className="grid grid-cols-2 gap-3">
+               <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
+                   <div className="text-xs text-blue-600 mb-1">Data 1</div>
+                   <div className="text-lg font-bold text-blue-900">{currentUser.data1Usage || 0}</div>
+                   <div className="text-[10px] text-blue-400">lines</div>
+               </div>
+               <div className="bg-emerald-50 p-3 rounded-lg border border-emerald-100">
+                   <div className="text-xs text-emerald-600 mb-1">Data 2</div>
+                   <div className="text-lg font-bold text-emerald-900">{currentUser.data2Usage || 0}</div>
+                   <div className="text-[10px] text-emerald-400">lines</div>
+               </div>
+               <div className="col-span-2 bg-gray-50 p-3 rounded-lg border border-gray-200 flex justify-between items-center">
+                   <div>
+                       <div className="text-xs text-gray-500">Total Usage</div>
+                       <div className="text-sm font-bold text-gray-800">{currentUser.dataMeqUsage} lines</div>
+                   </div>
+                   <Activity className="w-4 h-4 text-gray-400" />
+               </div>
            </div>
         </div>
       </div>
@@ -157,7 +178,6 @@ export const UserDashboard: React.FC = () => {
                 <div className={`flex flex-col ${isMe ? 'items-end' : 'items-start'} max-w-[75%]`}>
                   <div className="flex items-center space-x-2 mb-1">
                       {!isMe && <span className="text-xs font-bold text-gray-600">{msg.senderName}</span>}
-                      {msg.isAdmin && <Shield className="w-3 h-3 text-indigo-500" />}
                       {isSystem && <Bot className="w-3 h-3 text-indigo-500" />}
                   </div>
                   <div className={`px-4 py-2.5 shadow-sm text-sm leading-relaxed ${

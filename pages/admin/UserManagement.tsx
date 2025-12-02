@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { useStore } from '../../context/StoreContext';
 import { User, UserRole, UserStatus } from '../../types';
-import { MoreVertical, Shield, Ban, AlertTriangle, CheckCircle, Trash2, Search, BrainCircuit, Database, RotateCcw } from 'lucide-react';
+import { MoreVertical, Shield, Ban, AlertTriangle, CheckCircle, Trash2, Search, BrainCircuit, Database, RotateCcw, Infinity as InfinityIcon } from 'lucide-react';
 import { generateWarningMessage, analyzeUserActivity } from '../../services/geminiService';
 
 export const UserManagement: React.FC = () => {
@@ -18,6 +18,8 @@ export const UserManagement: React.FC = () => {
   // Data Limit Modal State
   const [isLimitModalOpen, setIsLimitModalOpen] = useState(false);
   const [newLimit, setNewLimit] = useState(0);
+  const [newMaxPerReq, setNewMaxPerReq] = useState(50);
+  const [isUnlimited, setIsUnlimited] = useState(false);
 
   // New user form state
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
@@ -71,13 +73,16 @@ export const UserManagement: React.FC = () => {
 
   const openLimitModal = (user: User) => {
       setSelectedUser(user);
-      setNewLimit(user.dataMeqLimit);
+      const unlim = user.dataMeqLimit === -1;
+      setIsUnlimited(unlim);
+      setNewLimit(unlim ? 100 : user.dataMeqLimit);
+      setNewMaxPerReq(user.maxPickPerRequest || 50);
       setIsLimitModalOpen(true);
   };
 
   const saveLimit = () => {
       if (selectedUser) {
-          updateUserLimit(selectedUser.id, newLimit);
+          updateUserLimit(selectedUser.id, isUnlimited ? -1 : newLimit, newMaxPerReq);
           setIsLimitModalOpen(false);
       }
   };
@@ -86,8 +91,6 @@ export const UserManagement: React.FC = () => {
       if (selectedUser) {
           resetUserUsage(selectedUser.id);
           alert('Usage reset to 0');
-          // Keep modal open to show updated stats? No, close it for better UX flow or update local state?
-          // Since users list updates automatically, we just close.
           setIsLimitModalOpen(false);
       }
   };
@@ -121,13 +124,14 @@ export const UserManagement: React.FC = () => {
                 <th className="p-4 font-semibold text-gray-600 text-sm">User</th>
                 <th className="p-4 font-semibold text-gray-600 text-sm">Role</th>
                 <th className="p-4 font-semibold text-gray-600 text-sm">Status</th>
-                <th className="p-4 font-semibold text-gray-600 text-sm">Data Limit</th>
+                <th className="p-4 font-semibold text-gray-600 text-sm">Data Consumption</th>
                 <th className="p-4 font-semibold text-gray-600 text-sm text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {filteredUsers.map(user => {
-                 const usagePercent = user.dataMeqLimit > 0 ? (user.dataMeqUsage / user.dataMeqLimit) * 100 : 0;
+                 const isUnlim = user.dataMeqLimit === -1;
+                 const usagePercent = !isUnlim && user.dataMeqLimit > 0 ? (user.dataMeqUsage / user.dataMeqLimit) * 100 : 0;
                  return (
                 <tr key={user.id} className="hover:bg-gray-50 transition-colors group">
                   <td className="p-4">
@@ -154,14 +158,24 @@ export const UserManagement: React.FC = () => {
                     </span>
                   </td>
                   <td className="p-4">
-                     <div className="flex items-center space-x-2">
-                        <div className="flex-1 w-24 bg-gray-200 rounded-full h-2">
-                           <div 
-                              className={`h-2 rounded-full ${usagePercent > 90 ? 'bg-red-500' : 'bg-blue-500'}`} 
-                              style={{ width: `${Math.min(usagePercent, 100)}%` }}
-                           ></div>
+                     <div className="flex flex-col gap-1.5">
+                        <div className="flex items-center justify-between text-xs text-gray-600 mb-1">
+                            <span>Total: {user.dataMeqUsage} / {isUnlim ? '∞' : user.dataMeqLimit}</span>
                         </div>
-                        <span className="text-xs text-gray-500 whitespace-nowrap">{user.dataMeqUsage} / {user.dataMeqLimit}</span>
+                        <div className="w-32 bg-gray-200 rounded-full h-1.5 mb-1">
+                           {isUnlim ? (
+                               <div className="h-1.5 rounded-full bg-blue-300 w-full opacity-50"></div>
+                           ) : (
+                               <div 
+                                  className={`h-1.5 rounded-full ${usagePercent > 90 ? 'bg-red-500' : 'bg-blue-500'}`} 
+                                  style={{ width: `${Math.min(usagePercent, 100)}%` }}
+                               ></div>
+                           )}
+                        </div>
+                        <div className="flex text-[10px] text-gray-400 gap-3">
+                           <span className="flex items-center"><div className="w-1.5 h-1.5 rounded-full bg-blue-500 mr-1"></div> D1: {user.data1Usage || 0}</span>
+                           <span className="flex items-center"><div className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1"></div> D2: {user.data2Usage || 0}</span>
+                        </div>
                      </div>
                   </td>
                   <td className="p-4 text-right">
@@ -288,20 +302,50 @@ export const UserManagement: React.FC = () => {
                    <div>
                        <div className="text-xs text-blue-800 font-semibold uppercase">Current Usage</div>
                        <div className="text-lg font-bold text-blue-900">{selectedUser.dataMeqUsage} lines</div>
+                       <div className="text-[10px] text-blue-600 mt-1 flex gap-2">
+                           <span>D1: {selectedUser.data1Usage || 0}</span>
+                           <span>D2: {selectedUser.data2Usage || 0}</span>
+                       </div>
                    </div>
                    <button onClick={handleResetUsage} className="text-blue-600 hover:bg-blue-100 p-2 rounded-full" title="Reset Usage to 0">
                        <RotateCcw className="w-5 h-5" />
                    </button>
                </div>
                
-               <div className="mb-6">
-                   <label className="block text-sm font-medium text-gray-700 mb-2">Max Lines Allowed</label>
-                   <input 
-                       type="number"
-                       className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-                       value={newLimit}
-                       onChange={(e) => setNewLimit(parseInt(e.target.value) || 0)}
-                   />
+               <div className="space-y-4 mb-6">
+                    <label className="flex items-center space-x-2 text-sm font-semibold text-gray-700 cursor-pointer">
+                        <input 
+                            type="checkbox" 
+                            checked={isUnlimited} 
+                            onChange={(e) => setIsUnlimited(e.target.checked)}
+                            className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
+                        />
+                        <span>Unlimited Daily Access</span>
+                    </label>
+
+                   <div>
+                       <label className="block text-sm font-medium text-gray-700 mb-1">Max Daily Lines</label>
+                       <div className="relative">
+                            <input 
+                                type="number"
+                                className={`w-full p-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none ${isUnlimited ? 'bg-gray-100 text-gray-400' : 'border-gray-300'}`}
+                                value={newLimit}
+                                onChange={(e) => setNewLimit(parseInt(e.target.value) || 0)}
+                                disabled={isUnlimited}
+                            />
+                            {isUnlimited && <InfinityIcon className="absolute right-2 top-2.5 w-5 h-5 text-gray-400" />}
+                       </div>
+                   </div>
+
+                   <div>
+                       <label className="block text-sm font-medium text-gray-700 mb-1">Max Per Request</label>
+                       <input 
+                           type="number"
+                           className="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+                           value={newMaxPerReq}
+                           onChange={(e) => setNewMaxPerReq(parseInt(e.target.value) || 1)}
+                       />
+                   </div>
                </div>
 
                <div className="flex justify-end gap-2">

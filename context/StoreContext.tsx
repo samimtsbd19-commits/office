@@ -1,158 +1,158 @@
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { StoreState, User, UserRole, UserStatus, Notification, ChatMessage, DataMeqLog, SystemSettings } from '../types';
-import { INITIAL_USERS } from '../constants';
+import { db } from '../services/db';
 
-const StoreContext = createContext<StoreState | undefined>(undefined);
+interface StoreContextType extends StoreState {
+  isDbConnected: boolean;
+}
+
+const StoreContext = createContext<StoreContextType | undefined>(undefined);
+
+export const useStore = () => {
+  const context = useContext(StoreContext);
+  if (context === undefined) {
+    throw new Error('useStore must be used within a StoreProvider');
+  }
+  return context;
+};
 
 export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  // Load from local storage if available, else initial
-  const [users, setUsers] = useState<User[]>(() => {
-    const saved = localStorage.getItem('nexus_users');
-    return saved ? JSON.parse(saved) : INITIAL_USERS;
+  const [isDbConnected, setIsDbConnected] = useState(false);
+
+  // Initialize State
+  const [users, setUsers] = useState<User[]>([]);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [systemSettings, setSystemSettings] = useState<SystemSettings>({ 
+    dataMeqLocked: false, 
+    maintenanceMode: false, 
+    allowUserUploads: false 
   });
+  const [data1, setData1] = useState<string[]>([]);
+  const [data2, setData2] = useState<string[]>([]);
+  const [dataMeqLogs, setDataMeqLogs] = useState<DataMeqLog[]>([]);
 
-  const [currentUser, setCurrentUser] = useState<User | null>(() => {
-     const saved = localStorage.getItem('nexus_current_user');
-     return saved ? JSON.parse(saved) : null;
-  });
-
-  const [messages, setMessages] = useState<ChatMessage[]>(() => {
-    const saved = localStorage.getItem('nexus_messages');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [systemSettings, setSystemSettings] = useState<SystemSettings>(() => {
-      const saved = localStorage.getItem('nexus_system_settings');
-      return saved ? JSON.parse(saved) : { dataMeqLocked: false, maintenanceMode: false };
-  });
-
-  // Data Meq State
-  const [data1, setData1] = useState<string[]>(() => {
-    const saved = localStorage.getItem('nexus_data1');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [data2, setData2] = useState<string[]>(() => {
-    const saved = localStorage.getItem('nexus_data2');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [dataMeqLogs, setDataMeqLogs] = useState<DataMeqLog[]>(() => {
-    const saved = localStorage.getItem('nexus_datameq_logs');
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  // Persist to local storage
-  useEffect(() => { localStorage.setItem('nexus_users', JSON.stringify(users)); }, [users]);
-  useEffect(() => { localStorage.setItem('nexus_messages', JSON.stringify(messages)); }, [messages]);
-  useEffect(() => { localStorage.setItem('nexus_data1', JSON.stringify(data1)); }, [data1]);
-  useEffect(() => { localStorage.setItem('nexus_data2', JSON.stringify(data2)); }, [data2]);
-  useEffect(() => { localStorage.setItem('nexus_datameq_logs', JSON.stringify(dataMeqLogs)); }, [dataMeqLogs]);
-  useEffect(() => { localStorage.setItem('nexus_system_settings', JSON.stringify(systemSettings)); }, [systemSettings]);
-
+  // Initial DB Connection
   useEffect(() => {
-    if (currentUser) {
-        localStorage.setItem('nexus_current_user', JSON.stringify(currentUser));
-        
-        const liveUser = users.find(u => u.id === currentUser.id);
-        if (!liveUser) {
-             logout(); 
-        } else if (liveUser.status === UserStatus.BLOCKED || liveUser.status === UserStatus.SUSPENDED) {
-            if (currentUser.role !== UserRole.ADMIN) { 
-                 alert("Your account has been suspended by an administrator.");
-                 logout();
-            }
-        } else if (JSON.stringify(liveUser) !== JSON.stringify(currentUser)) {
-            setCurrentUser(liveUser);
-        }
-    } else {
-        localStorage.removeItem('nexus_current_user');
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [users, currentUser]);
+    const initDb = async () => {
+      await db.connect();
+      setIsDbConnected(true);
+      
+      // Load initial data
+      setUsers(db.getUsers());
+      setMessages(db.getMessages());
+      setSystemSettings(db.getSettings());
+      setData1(db.getData('data1'));
+      setData2(db.getData('data2'));
+      setDataMeqLogs(db.getLogs());
 
-  // Listen for storage events (Cross-tab synchronization) AND Poll for changes
-  useEffect(() => {
-    const handleStorageChange = (e: StorageEvent) => {
-        if (e.key === 'nexus_messages' && e.newValue) setMessages(JSON.parse(e.newValue));
-        if (e.key === 'nexus_users' && e.newValue) setUsers(JSON.parse(e.newValue));
-        if (e.key === 'nexus_data1' && e.newValue) setData1(JSON.parse(e.newValue));
-        if (e.key === 'nexus_data2' && e.newValue) setData2(JSON.parse(e.newValue));
-        if (e.key === 'nexus_datameq_logs' && e.newValue) setDataMeqLogs(JSON.parse(e.newValue));
-        if (e.key === 'nexus_system_settings' && e.newValue) setSystemSettings(JSON.parse(e.newValue));
+      // Load session
+      const savedUser = localStorage.getItem('nexus_sqlite_current_user');
+      if (savedUser) setCurrentUser(JSON.parse(savedUser));
     };
-    window.addEventListener('storage', handleStorageChange);
 
-    // Polling backup for robust sync (checks every 0.5s)
-    const interval = setInterval(() => {
-        const d1 = localStorage.getItem('nexus_data1');
-        const d2 = localStorage.getItem('nexus_data2');
-        const logs = localStorage.getItem('nexus_datameq_logs');
-        const settings = localStorage.getItem('nexus_system_settings');
-        const usersStored = localStorage.getItem('nexus_users');
-
-        if (d1) {
-            const parsed1 = JSON.parse(d1);
-            setData1(prev => prev.length !== parsed1.length ? parsed1 : prev);
-        }
-        if (d2) {
-            const parsed2 = JSON.parse(d2);
-            setData2(prev => prev.length !== parsed2.length ? parsed2 : prev);
-        }
-        if (logs) {
-             const parsedLogs = JSON.parse(logs);
-             setDataMeqLogs(prev => prev.length !== parsedLogs.length ? parsedLogs : prev);
-        }
-        if (settings) {
-            const parsedSettings = JSON.parse(settings);
-            setSystemSettings(prev => JSON.stringify(prev) !== JSON.stringify(parsedSettings) ? parsedSettings : prev);
-        }
-        if (usersStored) {
-            const parsedUsers = JSON.parse(usersStored);
-            setUsers(prev => JSON.stringify(prev) !== JSON.stringify(parsedUsers) ? parsedUsers : prev);
-        }
-    }, 500);
-
-    return () => {
-        window.removeEventListener('storage', handleStorageChange);
-        clearInterval(interval);
-    };
+    initDb();
   }, []);
 
-  const login = (email: string) => {
-    const user = users.find(u => u.email === email);
+  // Persist changes to DB whenever state changes
+  useEffect(() => { if(isDbConnected) db.saveUsers(users); }, [users, isDbConnected]);
+  useEffect(() => { if(isDbConnected) db.saveMessages(messages); }, [messages, isDbConnected]);
+  useEffect(() => { if(isDbConnected) db.saveSettings(systemSettings); }, [systemSettings, isDbConnected]);
+  useEffect(() => { if(isDbConnected) db.saveData('data1', data1); }, [data1, isDbConnected]);
+  useEffect(() => { if(isDbConnected) db.saveData('data2', data2); }, [data2, isDbConnected]);
+  useEffect(() => { if(isDbConnected) db.saveLogs(dataMeqLogs); }, [dataMeqLogs, isDbConnected]);
+
+  // Sync Current User Session
+  useEffect(() => {
+    if (currentUser) {
+        localStorage.setItem('nexus_sqlite_current_user', JSON.stringify(currentUser));
+        const liveUser = users.find(u => u.id === currentUser.id);
+        
+        if (liveUser) {
+           if (JSON.stringify(liveUser) !== JSON.stringify(currentUser)) {
+               setCurrentUser(liveUser);
+           }
+           if (liveUser.status === UserStatus.BLOCKED || liveUser.status === UserStatus.SUSPENDED) {
+             if (currentUser.role !== UserRole.ADMIN) {
+               alert("Security Alert: Access Revoked.");
+               logout();
+             }
+           }
+        }
+    } else {
+        localStorage.removeItem('nexus_sqlite_current_user');
+    }
+  }, [users, currentUser]);
+
+  // Real-time Polling
+  useEffect(() => {
+    if (!isDbConnected) return;
+
+    const interval = setInterval(() => {
+      const dbUsers = db.getUsers();
+      if (JSON.stringify(dbUsers) !== JSON.stringify(users)) setUsers(dbUsers);
+
+      const dbMsgs = db.getMessages();
+      if (JSON.stringify(dbMsgs) !== JSON.stringify(messages)) setMessages(dbMsgs);
+
+      const dbData1 = db.getData('data1');
+      if (dbData1.length !== data1.length) setData1(dbData1);
+
+      const dbData2 = db.getData('data2');
+      if (dbData2.length !== data2.length) setData2(dbData2);
+      
+      const dbLogs = db.getLogs();
+      if (dbLogs.length !== dataMeqLogs.length) setDataMeqLogs(dbLogs);
+
+      const dbSettings = db.getSettings();
+      if (JSON.stringify(dbSettings) !== JSON.stringify(systemSettings)) setSystemSettings(dbSettings);
+
+    }, 500);
+
+    return () => clearInterval(interval);
+  }, [isDbConnected, users, messages, data1, data2, dataMeqLogs, systemSettings]);
+
+
+  // --- Actions ---
+
+  const login = async (email: string, password?: string): Promise<boolean> => {
+    const user = db.authenticate(email, password);
+    
     if (user) {
       if (user.status === UserStatus.BLOCKED) {
-        alert("This account is blocked.");
-        return;
+        alert("Access Denied: Account Blocked");
+        return false;
       }
       const updatedUser = { ...user, lastActive: new Date().toISOString() };
-      updateUserInternal(updatedUser);
+      // Update local state immediately
+      setUsers(prev => prev.map(u => u.id === user.id ? updatedUser : u));
       setCurrentUser(updatedUser);
+      return true;
     } else {
-      alert("User not found");
+      return false;
     }
   };
 
   const logout = () => {
     setCurrentUser(null);
-    localStorage.removeItem('nexus_current_user');
+    localStorage.removeItem('nexus_sqlite_current_user');
   };
 
-  const updateUserInternal = (updatedUser: User) => {
-    setUsers(prev => prev.map(u => u.id === updatedUser.id ? updatedUser : u));
-  };
-
-  const addUser = (userData: Omit<User, 'id' | 'logs' | 'notifications' | 'lastActive' | 'dataMeqLimit' | 'dataMeqUsage'>) => {
+  const addUser = (userData: Omit<User, 'id' | 'logs' | 'notifications' | 'lastActive' | 'dataMeqLimit' | 'dataMeqUsage' | 'maxPickPerRequest' | 'data1Usage' | 'data2Usage'>) => {
     const newUser: User = {
       ...userData,
       id: `user-${Date.now()}`,
+      // Default password for new users
+      password: 'user123', 
       lastActive: 'Never',
       logs: [{ id: `log-${Date.now()}`, action: 'Account Created', timestamp: new Date().toISOString() }],
       notifications: [],
-      dataMeqLimit: 100, // Default limit
-      dataMeqUsage: 0
+      dataMeqLimit: 100,
+      dataMeqUsage: 0,
+      data1Usage: 0,
+      data2Usage: 0,
+      maxPickPerRequest: 50
     };
     setUsers(prev => [...prev, newUser]);
   };
@@ -162,17 +162,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   };
 
   const updateUserStatus = (id: string, status: UserStatus) => {
-    setUsers(prev => prev.map(u => {
-      if (u.id === id) {
-        const actionLog = {
-            id: `log-${Date.now()}`,
-            action: `Status changed to ${status}`,
-            timestamp: new Date().toISOString()
-        };
-        return { ...u, status, logs: [actionLog, ...u.logs] };
-      }
-      return u;
-    }));
+    setUsers(prev => prev.map(u => u.id === id ? { ...u, status } : u));
   };
 
   const sendNotification = (userId: string, notificationData: Omit<Notification, 'id' | 'read' | 'timestamp'>) => {
@@ -192,9 +182,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   const clearNotifications = () => {
     if (!currentUser) return;
-    const updatedUser = { ...currentUser, notifications: [] };
-    updateUserInternal(updatedUser);
-    setCurrentUser(updatedUser);
+    setUsers(prev => prev.map(u => u.id === currentUser.id ? { ...u, notifications: [] } : u));
   };
 
   const addMessage = (msg: ChatMessage) => {
@@ -217,72 +205,58 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   };
 
   const updateSystemSettings = (newSettings: Partial<SystemSettings>) => {
-      setSystemSettings(prev => {
-          const updated = { ...prev, ...newSettings };
-          localStorage.setItem('nexus_system_settings', JSON.stringify(updated));
-          return updated;
-      });
+      setSystemSettings(prev => ({ ...prev, ...newSettings }));
   };
 
-  // --- Data Meq Functions ---
-
   const addDataMeq = (type: 'data1' | 'data2', content: string) => {
-      const key = type === 'data1' ? 'nexus_data1' : 'nexus_data2';
-      const currentData = JSON.parse(localStorage.getItem(key) || '[]');
-      
       const lines = content.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-      const updatedData = [...currentData, ...lines];
-      
-      localStorage.setItem(key, JSON.stringify(updatedData));
-      
-      if (type === 'data1') setData1(updatedData);
-      else setData2(updatedData);
+      if (type === 'data1') setData1(prev => [...prev, ...lines]);
+      else setData2(prev => [...prev, ...lines]);
   };
 
   const clearDataMeq = (type: 'data1' | 'data2') => {
-      const key = type === 'data1' ? 'nexus_data1' : 'nexus_data2';
-      localStorage.setItem(key, JSON.stringify([]));
       if (type === 'data1') setData1([]);
       else setData2([]);
   };
 
-  const updateUserLimit = (userId: string, limit: number) => {
-      setUsers(prev => prev.map(u => u.id === userId ? { ...u, dataMeqLimit: limit } : u));
+  const updateUserLimit = (userId: string, limit: number, maxPerRequest: number) => {
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, dataMeqLimit: limit, maxPickPerRequest: maxPerRequest } : u));
   };
 
   const resetUserUsage = (userId: string) => {
-      setUsers(prev => prev.map(u => u.id === userId ? { ...u, dataMeqUsage: 0 } : u));
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, dataMeqUsage: 0, data1Usage: 0, data2Usage: 0 } : u));
   };
 
   const generateEmails = (count1: number, count2: number, inserts: {pos: number, text: string}[]) => {
       if (!currentUser) return '';
       
-      // Check system lock
-      const currentSettings = JSON.parse(localStorage.getItem('nexus_system_settings') || '{}');
-      if (currentSettings.dataMeqLocked && currentUser.role !== UserRole.ADMIN) {
-          alert("System is currently locked by Administrator.");
+      if (systemSettings.dataMeqLocked && currentUser.role !== UserRole.ADMIN) {
+          alert("System Locked by Admin");
           return '';
       }
 
-      // Check User Limit for non-admins
       if (currentUser.role !== UserRole.ADMIN) {
-          const totalRequested = count1 + count2;
-          const remainingLimit = currentUser.dataMeqLimit - currentUser.dataMeqUsage;
-          if (totalRequested > remainingLimit) {
-              alert(`Quota Exceeded! You can only generate ${remainingLimit} more lines.`);
+        const maxPerReq = currentUser.maxPickPerRequest || 50;
+        if ((count1 + count2) > maxPerReq) {
+            alert(`Limit Exceeded: Max ${maxPerReq} per request.`);
+            return '';
+        }
+        if (currentUser.dataMeqLimit !== -1) {
+          const remaining = currentUser.dataMeqLimit - currentUser.dataMeqUsage;
+          if ((count1 + count2) > remaining) {
+              alert(`Quota Exceeded: Only ${remaining} left today.`);
               return '';
           }
+        }
       }
 
-      // Critical: Read directly from storage to prevent consuming stale state
-      const currentData1 = JSON.parse(localStorage.getItem('nexus_data1') || '[]');
-      const currentData2 = JSON.parse(localStorage.getItem('nexus_data2') || '[]');
+      const currentData1 = db.getData('data1');
+      const currentData2 = db.getData('data2');
 
-      // Concurrency Check
       if (currentData1.length < count1 || currentData2.length < count2) {
-          setData1(currentData1);
+          setData1(currentData1); 
           setData2(currentData2);
-          alert("Synchronization Error: Data was consumed by another user. Display updated.");
+          alert("Sync Error: Data updated by another user.");
           return '';
       }
       
@@ -292,14 +266,10 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       const remaining1 = currentData1.slice(count1);
       const remaining2 = currentData2.slice(count2);
 
-      localStorage.setItem('nexus_data1', JSON.stringify(remaining1));
-      localStorage.setItem('nexus_data2', JSON.stringify(remaining2));
-      
       setData1(remaining1);
       setData2(remaining2);
 
       const combined = [...picks1, ...picks2];
-
       const insertMap: Record<number, string[]> = {};
       inserts.forEach(ins => {
           if (ins.text && ins.pos > 0) {
@@ -314,25 +284,22 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       combined.forEach((orig, index) => {
           const i = index + 1; 
           final.push(orig);
-          
-          if (insertMap[i + 1]) {
-              final.push(...insertMap[i + 1]);
-          }
+          if (insertMap[i + 1]) final.push(...insertMap[i + 1]);
       });
       
-      if (insertMap[combined.length + 1]) {
-          final.push(...insertMap[combined.length + 1]);
-      }
+      if (insertMap[combined.length + 1]) final.push(...insertMap[combined.length + 1]);
 
       const resultText = final.join('\n');
       const totalGenerated = final.length;
-      const consumedCount = picks1.length + picks2.length;
 
-      // Update User Usage
       if (currentUser.role !== UserRole.ADMIN) {
-           const updatedUsage = currentUser.dataMeqUsage + consumedCount;
-           const updatedUser = { ...currentUser, dataMeqUsage: updatedUsage };
-           updateUserInternal(updatedUser);
+           const updatedUser = { 
+               ...currentUser, 
+               dataMeqUsage: currentUser.dataMeqUsage + (picks1.length + picks2.length),
+               data1Usage: (currentUser.data1Usage || 0) + picks1.length,
+               data2Usage: (currentUser.data2Usage || 0) + picks2.length
+           };
+           setUsers(prev => prev.map(u => u.id === currentUser.id ? updatedUser : u));
            setCurrentUser(updatedUser);
       }
 
@@ -342,13 +309,12 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
           userName: currentUser.name,
           count1: picks1.length,
           count2: picks2.length,
-          totalGenerated: totalGenerated,
+          totalGenerated,
           timestamp: new Date().toISOString()
       };
       
-      const currentLogs = JSON.parse(localStorage.getItem('nexus_datameq_logs') || '[]');
-      const newLogs = [log, ...currentLogs].slice(0, 100); // Keep last 100 logs
-      localStorage.setItem('nexus_datameq_logs', JSON.stringify(newLogs));
+      const currentLogs = db.getLogs();
+      const newLogs = [log, ...currentLogs].slice(0, 100);
       setDataMeqLogs(newLogs);
 
       return resultText;
@@ -363,6 +329,7 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       data1,
       data2,
       dataMeqLogs,
+      isDbConnected,
       login,
       logout,
       addUser,
@@ -382,12 +349,4 @@ export const StoreProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       {children}
     </StoreContext.Provider>
   );
-};
-
-export const useStore = () => {
-  const context = useContext(StoreContext);
-  if (!context) {
-    throw new Error('useStore must be used within a StoreProvider');
-  }
-  return context;
 };
